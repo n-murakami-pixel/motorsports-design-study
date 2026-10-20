@@ -1,3 +1,4 @@
+import { createHelmetMotion, advanceHelmetMotion } from './helmet-motion.mjs';
 const $=s=>document.querySelector(s);const menu=$('#menu-toggle'),nav=$('#navigation');function toggleMenu(open){document.body.classList.toggle('menu-open',open);menu.setAttribute('aria-expanded',String(open));menu.setAttribute('aria-label',open?'Close menu':'Open menu');nav.inert=!open;if(open)nav.querySelector('a').focus();else menu.focus()}menu.addEventListener('click',()=>toggleMenu(!document.body.classList.contains('menu-open')));nav.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{toggleMenu(false)}));document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('menu-open'))toggleMenu(false);if(e.key==='Tab'&&document.body.classList.contains('menu-open')){const links=[menu,...nav.querySelectorAll('a')];if(e.shiftKey&&document.activeElement===menu){e.preventDefault();links.at(-1).focus()}else if(!e.shiftKey&&document.activeElement===links.at(-1)){e.preventDefault();menu.focus()}}});
 const chapters=[['THE FOUNDATION','THE BEGINNING','A passion for racing starts long before the first green light. Karting provided the foundation: racecraft, discipline and the determination to improve with every session.','racing-hero.png'],['FIRST VICTORIES','2021 — 2022','A championship in the X30 Senior class of the GK4 Kart Series marked a turning point. A GT4 class win at the Zandvoort 500 followed, opening the door to a new chapter in car racing.','racing-track.png'],['PROVING SPEED','2023 — 2024','From the Porsche Sprint Challenge Benelux to the Carrera Cup: a step up in speed, competition and precision. Racing the 992 GT3 Cup brought a new level of challenge.','racing-track.png'],['GOING INTERNATIONAL','2025','Overall podiums and a first Carrera Cup Benelux victory. A guest appearance in Germany added rookie pole position and podium finishes, taking the journey onto an international stage.','racing-hero.png'],['POLE POSITION','2026','The next ambition: the Porsche Carrera Cup Deutschland and a home appearance at Zandvoort. A new season, new circuits and the same commitment to progress.','racing-track.png']];let current=-1;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
@@ -28,17 +29,66 @@ const races=[['RACE 3 - CIRCUIT RICARDO TORMO','Porsche Sprint Challenge Souther
 
 // Map the aperture to the transformed photograph, keeping its colour strictly local.
 const hero=$('#hero');function revealHero(e){const photo=$('.hero-photo'),rect=photo.getBoundingClientRect(),sx=rect.width/photo.clientWidth||1,sy=rect.height/photo.clientHeight||1;hero.style.setProperty('--reveal-x',((e.clientX-rect.left)/sx)+'px');hero.style.setProperty('--reveal-y',((e.clientY-rect.top)/sy)+'px');hero.classList.add('revealing');hero.style.setProperty('--hero-x',((e.clientX/innerWidth-.5)*8)+'px');hero.style.setProperty('--hero-y',((e.clientY/innerHeight-.5)*6)+'px');}hero.addEventListener('pointermove',revealHero);hero.addEventListener('pointerleave',()=>{hero.classList.remove('revealing');hero.style.setProperty('--hero-x','0px');hero.style.setProperty('--hero-y','0px')});hero.addEventListener('pointerdown',revealHero);
-const HELMET_COUNT=144,helmetFrames=[];
-for(let order=0;order<HELMET_COUNT;order++){const i=(HELMET_COUNT-order)%HELMET_COUNT,im=new Image();im.decoding='async';im.src=`assets/helmet-smooth/frame-${String(i).padStart(3,'0')}.webp?v=8`;if(im.decode)im.decode().catch(()=>{});helmetFrames[i]=im;}
-let helmetFrame=-1,helmetProgress=0,helmetSmooth=0,helmetIdle=0,helmetVisible=false,helmetLastTime=0;
-function renderHelmet(){
- const position=reduced.matches?0:((HELMET_COUNT-(helmetSmooth*(HELMET_COUNT-1)+helmetIdle)%HELMET_COUNT)%HELMET_COUNT);
- const first=Math.floor(position),second=(first+1)%HELMET_COUNT,fraction=position-first,base=helmetFrames[first],next=helmetFrames[second];
- if(base?.complete&&base.naturalWidth){if(first!==helmetFrame){$('#helmet-sequence').src=base.src;helmetFrame=first;}if(next?.complete&&next.naturalWidth){$('#helmet-blend').src=next.src;$('#helmet-sequence').style.opacity=String(reduced.matches?1:1-fraction);$('#helmet-blend').style.opacity=String(reduced.matches?0:fraction);}else{$('#helmet-sequence').style.opacity='1';$('#helmet-blend').style.opacity='0';}}
+const HELMET_COUNT=144,helmetFrames=new Array(HELMET_COUNT);
+const helmetCanvas=$('#helmet-sequence'),helmetContext=helmetCanvas.getContext('2d',{alpha:true});
+const helmetMotion=createHelmetMotion();
+let helmetProgress=0,helmetVisible=false,helmetLastTime=0,helmetRAF=0,helmetReady=false,helmetLoading=false;
+// Four outstanding requests at most; no render ever reads an undecoded image.
+// Bitmaps are limited to the sequence's native resolution (320px on phones).
+const helmetSize=innerWidth<761?320:480;
+helmetCanvas.width=helmetCanvas.height=helmetSize;
+async function loadHelmetFrame(index){
+ const im=new Image();im.decoding='async';
+ im.src='assets/helmet-smooth/frame-'+String(index).padStart(3,'0')+'.webp?v=8';
+ await im.decode();
+ if(typeof createImageBitmap==='function'){
+  try{return await createImageBitmap(im,{resizeWidth:helmetSize,resizeHeight:helmetSize,resizeQuality:'high'});}catch{/* Use the decoded image on browsers without bitmap resizing. */}
+ }
+ return im;
 }
-function tickHelmet(time){const delta=helmetLastTime?Math.min(64,time-helmetLastTime):16;helmetLastTime=time;if(helmetVisible&&!document.hidden&&!reduced.matches){helmetSmooth+=(helmetProgress-helmetSmooth)*(1-Math.exp(-delta/120));helmetIdle+=delta*.012;renderHelmet();}requestAnimationFrame(tickHelmet);}
-requestAnimationFrame(tickHelmet);
-function updateScrollMedia(){document.querySelectorAll('.about-left,.about-right').forEach(im=>{const r=im.getBoundingClientRect();const colour=Math.max(0,Math.min(1,(innerHeight*.9-r.top)/(innerHeight*.48)));im.style.filter=`grayscale(${1-colour})`;});const section=$('#helmet'),r=section.getBoundingClientRect(),layoutTop=r.top-(parseFloat(section.style.getPropertyValue('--section-overlap'))||0);const p=Math.max(0,Math.min(1,-layoutTop/Math.max(1,section.offsetHeight-innerHeight)));const entrance=Math.max(0,Math.min(1,(innerHeight*.82-r.top)/(innerHeight*.55)));section.style.setProperty('--helmet-enter',String(entrance));helmetProgress=p;helmetVisible=r.top<innerHeight&&r.top+section.offsetHeight>0;if(reduced.matches){helmetSmooth=p;renderHelmet();}const historyTop=$('#history').getBoundingClientRect().top;section.style.setProperty('--section-overlap',Math.max(0,Math.min(innerHeight*.4,(innerHeight-historyTop)*.4))+'px');const filmSection=$('#film-scroll'),fr=filmSection.getBoundingClientRect();const progress=Math.max(0,Math.min(1,-fr.top/Math.max(1,filmSection.offsetHeight-innerHeight)));filmSection.style.setProperty('--film-scale',reduced.matches?'1':String(.66+.34*progress));}
+function renderHelmet(position=0){
+ if(!helmetContext)return;
+ const angle=reduced.matches?0:((HELMET_COUNT-position%HELMET_COUNT)%HELMET_COUNT);
+ const first=Math.floor(angle),fraction=angle-first;
+ const base=helmetFrames[first],next=helmetFrames[(first+1)%HELMET_COUNT];
+ if(!base||(!next&&fraction>0))return; // Hold the last complete canvas, never jump to a nearby ready frame.
+ helmetCanvas.style.backgroundImage='none';
+ helmetContext.clearRect(0,0,helmetSize,helmetSize);
+ helmetContext.globalCompositeOperation='source-over';helmetContext.globalAlpha=1-fraction;
+ helmetContext.drawImage(base,0,0,helmetSize,helmetSize);
+ if(fraction>0){helmetContext.globalCompositeOperation='lighter';helmetContext.globalAlpha=fraction;helmetContext.drawImage(next,0,0,helmetSize,helmetSize);}
+ helmetContext.globalAlpha=1;helmetContext.globalCompositeOperation='source-over';
+}
+async function prepareHelmet(){
+ if(helmetLoading||helmetReady||(reduced.matches&&helmetFrames[0]))return;helmetLoading=true;
+ try{
+  if(!helmetFrames[0])helmetFrames[0]=await loadHelmetFrame(0);renderHelmet();
+  if(reduced.matches)return;
+  let order=1;
+  const results=await Promise.allSettled(Array.from({length:4},async()=>{
+   while(order<HELMET_COUNT){const i=(HELMET_COUNT-order++)%HELMET_COUNT;if(!helmetFrames[i])helmetFrames[i]=await loadHelmetFrame(i);}
+  }));
+  if(results.some(result=>result.status==='rejected'))throw new Error('Incomplete helmet sequence');
+  helmetReady=true;helmetCanvas.dataset.ready='true';scheduleHelmet();
+ }catch(error){
+  // The static fallback remains visible on network/decode failure; retry on re-entry.
+  helmetCanvas.dataset.ready='error';
+ }finally{helmetLoading=false;}
+}
+function scheduleHelmet(){
+ if(!helmetRAF&&helmetVisible&&helmetReady&&!document.hidden&&!reduced.matches)helmetRAF=requestAnimationFrame(tickHelmet);
+}
+function tickHelmet(time){
+ helmetRAF=0;
+ if(!helmetVisible||document.hidden||reduced.matches){helmetLastTime=0;return;}
+ const delta=helmetLastTime?time-helmetLastTime:0;helmetLastTime=time;
+ renderHelmet(advanceHelmetMotion(helmetMotion,helmetProgress,delta));scheduleHelmet();
+}
+function pauseHelmet(){if(helmetRAF)cancelAnimationFrame(helmetRAF);helmetRAF=0;helmetLastTime=0;}
+new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))prepareHelmet();},{rootMargin:'1200px'}).observe($('#helmet'));
+document.addEventListener('visibilitychange',()=>{pauseHelmet();scheduleHelmet();});
+reduced.addEventListener('change',()=>{pauseHelmet();if(reduced.matches)renderHelmet();else{if(!helmetReady)prepareHelmet();scheduleHelmet();}});
+function updateScrollMedia(){document.querySelectorAll('.about-left,.about-right').forEach(im=>{const r=im.getBoundingClientRect();const colour=Math.max(0,Math.min(1,(innerHeight*.9-r.top)/(innerHeight*.48)));im.style.filter=`grayscale(${1-colour})`;});const section=$('#helmet'),r=section.getBoundingClientRect(),layoutTop=r.top-(parseFloat(section.style.getPropertyValue('--section-overlap'))||0);const p=Math.max(0,Math.min(1,-layoutTop/Math.max(1,section.offsetHeight-innerHeight)));const entrance=Math.max(0,Math.min(1,(innerHeight*.82-r.top)/(innerHeight*.55)));section.style.setProperty('--helmet-enter',String(entrance));helmetProgress=p;helmetVisible=r.top<innerHeight&&r.top+section.offsetHeight>0;if(!helmetVisible)pauseHelmet();else{if(!helmetLoading)prepareHelmet();scheduleHelmet();}if(reduced.matches)renderHelmet();const historyTop=$('#history').getBoundingClientRect().top;section.style.setProperty('--section-overlap',Math.max(0,Math.min(innerHeight*.4,(innerHeight-historyTop)*.4))+'px');const filmSection=$('#film-scroll'),fr=filmSection.getBoundingClientRect();const progress=Math.max(0,Math.min(1,-fr.top/Math.max(1,filmSection.offsetHeight-innerHeight)));filmSection.style.setProperty('--film-scale',reduced.matches?'1':String(.66+.34*progress));}
 function intro(){document.querySelectorAll('.digit-reel').forEach((el,i)=>{const final=Number(el.dataset.final);el.style.transform=`translateY(-${final}em)`;if(!reduced.matches)el.animate([{transform:'translateY(0)'},{transform:`translateY(-${final}em)`}],{duration:1800+i*220,delay:150+i*120,easing:'cubic-bezier(.2,.75,.2,1)',fill:'backwards'});});}
 
 intro();onScroll();
