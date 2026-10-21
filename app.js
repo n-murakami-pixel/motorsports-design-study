@@ -39,7 +39,7 @@ const helmetSize=innerWidth<761?320:480;
 helmetCanvas.width=helmetCanvas.height=helmetSize;
 async function loadHelmetFrame(index){
  const im=new Image();im.decoding='async';
- im.src='assets/helmet-smooth/frame-'+String(index).padStart(3,'0')+'.webp?v=8';
+ im.src='assets/helmet-generated-v10/frame-'+String(index).padStart(3,'0')+'.webp?v=10';
  await im.decode();
  if(typeof createImageBitmap==='function'){
   try{return await createImageBitmap(im,{resizeWidth:helmetSize,resizeHeight:helmetSize,resizeQuality:'high'});}catch{/* Use the decoded image on browsers without bitmap resizing. */}
